@@ -1,0 +1,81 @@
+# You can specify a custom docker image from Docker Hub as your build environment.
+
+image: node:16
+
+pipelines:
+  custom:
+    validation:
+      - step:
+          name: 'Validation'
+          script:
+            - yarn
+            - yarn build
+            - yarn test
+            - yarn eslint src
+  branches:
+    master-to-change:
+      - step:
+          name: 'Docker'
+          script:
+            - docker login -u $USERNAME -p $PASSWORD
+            - docker build . -f prod.Dockerfile -t technocitedemo/demo:latest
+            - docker push technocitedemo/demo:latest
+          services:
+            - docker
+    dev:
+      - step:
+          name: 'Build'
+          caches:
+            - node
+            - dist
+          script:
+            - yarn
+            - yarn build
+
+      - parallel:
+          - step:
+              name: 'Test'
+              caches:
+                - node
+              script:
+                - yarn test
+          - step:
+              name: 'Lint'
+              caches:
+                - node
+              script:
+                - yarn eslint src
+
+      # The following deployment steps will be executed for each pipeline run. To configure your steps and conditionally deploy see https://support.atlassian.com/bitbucket-cloud/docs/configure-bitbucket-pipelinesyml/
+      - step:
+          name: 'Deployment to Staging'
+          deployment: staging
+          caches:
+            - node
+            - dist
+            - build
+          script:
+            - ls -alh .
+            - ls -alh dist
+            - zip -r build.zip dist node_modules package.json yarn.lock
+
+      - step:
+          name: 'Deployment to Production'
+          deployment: production
+          trigger: 'manual'
+          caches:
+            - build
+          script:
+            - ls -alh .
+            - ls -alh dist
+            - echo $($PROD_TODO)
+            - scp -P $PORT -r build.zip $SERV:$PATH
+
+            # SERV => bstorm@92.222.71.109
+            # PATH => /var/www/prod/...
+            # PORT => 1234
+
+definitions:
+  caches:
+    dist: dist
+    build: build.zip
